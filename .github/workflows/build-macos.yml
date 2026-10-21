@@ -1,0 +1,56 @@
+name: Build macOS
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-macos:
+    name: macOS universal2 (VST3 + AU + CLAP)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Stage bundles
+        run: |
+          mkdir -p dist
+          cp -R build/Temper_artefacts/Release/VST3/Temper.vst3      dist/
+          cp -R build/Temper_artefacts/Release/AU/Temper.component   dist/
+          cp -R build/Temper_artefacts/Release/CLAP/Temper.clap      dist/
+
+      - name: Create installer package (.pkg)
+        run: |
+          mkdir -p payload/Library/Audio/Plug-Ins/VST3
+          mkdir -p payload/Library/Audio/Plug-Ins/Components
+          mkdir -p payload/Library/Audio/Plug-Ins/CLAP
+          cp -R dist/Temper.vst3      payload/Library/Audio/Plug-Ins/VST3/
+          cp -R dist/Temper.component payload/Library/Audio/Plug-Ins/Components/
+          cp -R dist/Temper.clap      payload/Library/Audio/Plug-Ins/CLAP/
+          mkdir -p scripts
+          printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/VST3/Temper.vst3"\nrm -rf "/Library/Audio/Plug-Ins/Components/Temper.component"\nrm -rf "/Library/Audio/Plug-Ins/CLAP/Temper.clap"\nexit 0\n' > scripts/preinstall
+          chmod +x scripts/preinstall
+          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version 0.1.2 --install-location / Temper-0.1.2-mac.pkg
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Temper-macOS
+          path: |
+            dist/**
+            Temper-0.1.2-mac.pkg
