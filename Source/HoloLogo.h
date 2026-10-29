@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cmath>
@@ -17,7 +17,7 @@ inline juce::Typeface::Ptr monumentTypeface (bool bold)
 
 inline juce::Font monumentFont (float height, bool bold = true)
 {
-    return juce::Font (monumentTypeface (bold)).withHeight (height);
+    return juce::FontOptions (monumentTypeface (bold)).withHeight (height);
 }
 
 // An animated, holographic title rendered in Monument Extended. The glyph

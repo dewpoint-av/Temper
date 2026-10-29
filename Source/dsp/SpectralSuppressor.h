@@ -36,18 +36,23 @@ namespace temper
 
         bool operator== (const Params& o) const
         {
-            if (amount      != o.amount
-                || sensitivity != o.sensitivity
-                || slope       != o.slope
-                || q           != o.q
-                || attackMs    != o.attackMs
-                || releaseMs   != o.releaseMs
-                || mix         != o.mix
-                || output      != o.output)
+            const auto eq = [] (float a, float b)
+            {
+                return std::fabs (a - b) < 1.0e-4f;
+            };
+
+            if (! eq (amount,      o.amount)
+                || ! eq (sensitivity, o.sensitivity)
+                || ! eq (slope,       o.slope)
+                || ! eq (q,           o.q)
+                || ! eq (attackMs,    o.attackMs)
+                || ! eq (releaseMs,   o.releaseMs)
+                || ! eq (mix,         o.mix)
+                || ! eq (output,      o.output))
                 return false;
 
             for (int i = 0; i < kNumEqBands; ++i)
-                if (eqFreq[i] != o.eqFreq[i] || eqGain[i] != o.eqGain[i])
+                if (! eq (eqFreq[i], o.eqFreq[i]) || ! eq (eqGain[i], o.eqGain[i]))
                     return false;
 
             return true;

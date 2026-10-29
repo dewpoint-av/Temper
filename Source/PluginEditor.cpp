@@ -19,8 +19,8 @@ namespace
     {
     public:
         Knob(juce::AudioProcessorValueTreeState& st, const juce::String& paramId,
-             const juce::String& name, std::function<juce::String(float)> textFn)
-            : stateRef(st), param(paramId), textFn(textFn)
+             const juce::String& name, std::function<juce::String(float)> textFnIn)
+            : stateRef(st), param(paramId), textFn(textFnIn)
         {
             slider.setSliderStyle(juce::Slider::Rotary);
             slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -29,12 +29,12 @@ namespace
             addAndMakeVisible(slider);
 
             nameLabel.setText(name, juce::dontSendNotification);
-            nameLabel.setFont(juce::Font(11.0f, juce::Font::plain));
+            nameLabel.setFont(juce::FontOptions(11.0f, juce::Font::plain));
             nameLabel.setColour(juce::Label::textColourId, TemperLookAndFeel::muted);
             nameLabel.setJustificationType(juce::Justification::centred);
             addAndMakeVisible(nameLabel);
 
-            valueLabel.setFont(juce::Font(11.0f, juce::Font::bold));
+            valueLabel.setFont(juce::FontOptions(11.0f, juce::Font::bold));
             valueLabel.setColour(juce::Label::textColourId, TemperLookAndFeel::text);
             valueLabel.setJustificationType(juce::Justification::centred);
             addAndMakeVisible(valueLabel);
@@ -81,7 +81,7 @@ namespace
         explicit Panel(const juce::String& title)
         {
             titleLabel.setText(title, juce::dontSendNotification);
-            titleLabel.setFont(juce::Font(13.0f, juce::Font::bold));
+            titleLabel.setFont(juce::FontOptions(13.0f, juce::Font::bold));
             titleLabel.setColour(juce::Label::textColourId, TemperLookAndFeel::accent);
             titleLabel.setJustificationType(juce::Justification::centred);
             addAndMakeVisible(titleLabel);
@@ -105,7 +105,7 @@ namespace
             fft = std::make_unique<juce::dsp::FFT>(kOrder);
             window.assign(kFftSize, 0.0f);
             for (int i = 0; i < kFftSize; ++i)
-                window[static_cast<size_t>(i)] = 0.5f * (1.0f - std::cos(2.0f * 3.14159265358979323846f * i / (kFftSize - 1)));
+                window[static_cast<size_t>(i)] = 0.5f * (1.0f - std::cos(2.0f * 3.14159265358979323846f * static_cast<float>(i) / static_cast<float>(kFftSize - 1)));
             fftBuf.assign(kFftSize * 2, 0.0f);
             spectrum.assign(kNumBins, 0.0f);
             startTimerHz(30);
@@ -129,11 +129,11 @@ namespace
             const float zeroY = gainToY(0.0f, plot);
             g.setColour(TemperLookAndFeel::muted.withAlpha(0.45f));
             g.drawLine(plot.getX(), zeroY, plot.getRight(), zeroY, 1.0f);
-            g.setFont(juce::Font(9.0f, juce::Font::plain));
+            g.setFont(juce::FontOptions(9.0f, juce::Font::plain));
             g.setColour(TemperLookAndFeel::muted);
-            g.drawText("+18", r.getX(), plot.getY() - 5, 30, 12, juce::Justification::right, false);
-            g.drawText(" 0",  r.getX(), zeroY - 6, 30, 12, juce::Justification::right, false);
-            g.drawText("-18", r.getX(), plot.getBottom() - 5, 30, 12, juce::Justification::right, false);
+            g.drawText("+18", juce::roundToInt(r.getX()), juce::roundToInt(plot.getY() - 5), 30, 12, juce::Justification::right, false);
+            g.drawText(" 0",  juce::roundToInt(r.getX()), juce::roundToInt(zeroY - 6), 30, 12, juce::Justification::right, false);
+            g.drawText("-18", juce::roundToInt(r.getX()), juce::roundToInt(plot.getBottom() - 5), 30, 12, juce::Justification::right, false);
 
             // Spectrum.
             juce::Path spec;
@@ -341,7 +341,7 @@ namespace
                 const float red  = -engine.getReductionDb(i);
                 const float norm = juce::jlimit(0.0f, 1.0f, red / 24.0f);
                 const float barH = norm * r.getHeight();
-                const float x = r.getX() + i * bw;
+                const float x = r.getX() + static_cast<float>(i) * bw;
                 if (barH > 0.5f)
                 {
                     g.setColour(TemperLookAndFeel::accent.withAlpha(0.30f + 0.65f * norm));
@@ -430,7 +430,7 @@ private:
         title = std::make_unique<HoloTitle>("TEMPER", 40.0f, true);
 
         subtitle.setText("RESONANCE SUPPRESSOR", juce::dontSendNotification);
-        subtitle.setFont(juce::Font(12.0f, juce::Font::bold));
+        subtitle.setFont(juce::FontOptions(12.0f, juce::Font::bold));
         subtitle.setColour(juce::Label::textColourId, TemperLookAndFeel::muted);
         subtitle.setJustificationType(juce::Justification::centred);
 
@@ -462,11 +462,11 @@ private:
 
 // ===========================================================================
 TemperAudioProcessorEditor::TemperAudioProcessorEditor(TemperAudioProcessor& p)
-    : AudioProcessorEditor(&p), processor(p)
+    : AudioProcessorEditor(&p)
 {
     setLookAndFeel(&lookAndFeel);
 
-    impl = std::make_unique<Impl>(processor);
+    impl = std::make_unique<Impl>(p);
     impl->attachTo(*this);
 
     setResizable(true, true);

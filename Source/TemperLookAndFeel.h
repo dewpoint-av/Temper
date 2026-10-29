@@ -3,7 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 // A holographic dark theme: near-black background, iridescent accent, soft
-// glowing knob arcs and bordered panels — the shared Dewpoint AV look.
+// glowing knob arcs and bordered panels â€” the shared Dewpoint AV look.
 class TemperLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
@@ -47,8 +47,8 @@ public:
                            float sliderPos, float rotaryStartAngle, float rotaryEndAngle,
                            juce::Slider& slider) override
     {
-        const float cx = static_cast<float> (x) + width  * 0.5f;
-        const float cy = static_cast<float> (y) + height * 0.5f;
+        const float cx = static_cast<float> (x) + static_cast<float> (width)  * 0.5f;
+        const float cy = static_cast<float> (y) + static_cast<float> (height) * 0.5f;
         const float radius = juce::jmin (static_cast<float> (width), static_cast<float> (height)) * 0.5f - 4.0f;
         if (radius <= 1.0f)
             return;
@@ -77,14 +77,14 @@ public:
                         cx + (radius + 6.5f) * std::sin (ang), cy - (radius + 6.5f) * std::cos (ang), 1.0f);
         }
 
-        // Draw the value arc as short coloured segments — avoids stroked-path
+        // Draw the value arc as short coloured segments â€” avoids stroked-path
         // construction and gradient fills, which are fragile on Windows.
         const float sweep = valueAngle - rotaryStartAngle;
         const int segs = juce::jmax (1, juce::roundToInt (std::fabs (sweep) / 0.45f));
         for (int s = 0; s < segs; ++s)
         {
-            const float t0 = static_cast<float> (s) / segs;
-            const float t1 = static_cast<float> (s + 1) / segs;
+            const float t0 = static_cast<float> (s) / static_cast<float> (segs);
+            const float t1 = static_cast<float> (s + 1) / static_cast<float> (segs);
             const float mid = (t0 + t1) * 0.5f;
             const juce::Colour c = mid < 0.5f ? blue.interpolatedWith  (purple, mid * 2.0f)
                                               : purple.interpolatedWith (red,    (mid - 0.5f) * 2.0f);
@@ -147,12 +147,12 @@ public:
 
     juce::Font getComboBoxFont (juce::ComboBox&) override
     {
-        return juce::Font (14.0f, juce::Font::bold);
+        return juce::FontOptions (14.0f, juce::Font::bold);
     }
 
     juce::Font getLabelFont (juce::Label&) override
     {
-        return juce::Font (11.0f, juce::Font::plain);
+        return juce::FontOptions (11.0f, juce::Font::plain);
     }
 
     static void drawPanelBackground (juce::Graphics& g, juce::Rectangle<int> bounds)

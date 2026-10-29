@@ -16,8 +16,6 @@ public:
     void resized() override;
 
 private:
-    TemperAudioProcessor& processor;
-
     TemperLookAndFeel lookAndFeel;   // value member, declared before impl (destroyed last)
 
     class Impl;
