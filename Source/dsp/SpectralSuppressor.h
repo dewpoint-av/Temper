@@ -71,6 +71,12 @@ namespace temper
         // Per-band dynamic gain reduction in dB (negative while suppressing), for the UI.
         float getReductionDb (int band) const;
 
+        // Centre frequency (Hz) of a dynamic suppression band, for the UI.
+        float getBandFrequency (int band) const;
+
+        // Current sample rate, for computing filter-response curves in the UI.
+        double getSampleRate() const { return sampleRate; }
+
         // Recent mono input for the spectrum display.
         const std::vector<float>& vizInput() const { return vizInputBuf; }
         int  vizWritePos() const                    { return vizWrite.load(); }

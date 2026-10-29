@@ -1,4 +1,4 @@
-name: Build macOS
+﻿name: Build macOS
 
 on:
   push:
@@ -43,7 +43,7 @@ jobs:
           cp -R build/Temper_artefacts/Release/AU/Temper.component   dist/
           cp -R build/Temper_artefacts/Release/CLAP/Temper.clap      dist/
 
-      # ── Code signing & notarization ──────────────────────────────────────
+      # â”€â”€ Code signing & notarization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       # All signing steps self-skip when the required secrets are absent
       # (e.g. pull requests from forks), producing unsigned bundles as before.
 
@@ -84,7 +84,7 @@ jobs:
             SZ=$(stat -f%z "$RAW" 2>/dev/null || stat --printf="%s" "$RAW")
             echo "${NAME}: ${SZ} bytes"
             if [ "$SZ" -lt 100 ]; then
-              echo "::error::${NAME} decoded too small (${SZ} bytes) — secret is empty or corrupted"
+              echo "::error::${NAME} decoded too small (${SZ} bytes) â€” secret is empty or corrupted"
               exit 1
             fi
 
@@ -96,19 +96,19 @@ jobs:
             if [ -z "$PWD" ]; then
               echo "::error::${NAME} password secret is EMPTY"
             elif [ "${#PWD_TRIMMED}" -ne "$PWD_LEN" ]; then
-              echo "::warning::${NAME} password secret has leading/trailing whitespace (${#PWD_TRIMMED} chars after trim) — re-paste it without spaces/newlines"
+              echo "::warning::${NAME} password secret has leading/trailing whitespace (${#PWD_TRIMMED} chars after trim) â€” re-paste it without spaces/newlines"
             fi
 
             # Verify with the SAME OpenSSL we re-encode with. macOS's system
             # `openssl` is LibreSSL and cannot read modern Apple-exported p12s
             # (PBES2/AES), which makes the password check fail spuriously.
             if ! $OSSL pkcs12 -in "$RAW" -passin pass:"$PWD" -legacy -nokeys -noout 2>"$RUNNER_TEMP/${NAME}_verify.log"; then
-              echo "::error::${NAME} password verification failed — MACOS_CERTIFICATE_PWD does not match the password set when the .p12 was exported"
+              echo "::error::${NAME} password verification failed â€” MACOS_CERTIFICATE_PWD does not match the password set when the .p12 was exported"
               echo "---- OpenSSL output ----"
               cat "$RUNNER_TEMP/${NAME}_verify.log"
               echo "------------------------"
               echo "How to fix: re-export the certificate + private key from Keychain Access as a .p12"
-              echo "with a KNOWN password (the one you type into the export dialog — not your login"
+              echo "with a KNOWN password (the one you type into the export dialog â€” not your login"
               echo "keychain password and not your Apple ID password), then set MACOS_CERTIFICATE_PWD"
               echo "to exactly that password."
               exit 1
@@ -130,10 +130,10 @@ jobs:
             rm -f "$RAW"
           }
 
-          # Developer ID Application (required — signs the plugin bundles)
+          # Developer ID Application (required â€” signs the plugin bundles)
           import_p12 "$MACOS_CERTIFICATE" "$MACOS_CERTIFICATE_PWD" "app"
 
-          # Developer ID Installer (optional — productsigns the .pkg)
+          # Developer ID Installer (optional â€” productsigns the .pkg)
           if [ -n "$MACOS_INSTALLER_CERTIFICATE" ]; then
             INSTALLER_PWD="${MACOS_INSTALLER_CERTIFICATE_PWD:-$MACOS_CERTIFICATE_PWD}"
             import_p12 "$MACOS_INSTALLER_CERTIFICATE" "$INSTALLER_PWD" "installer"
@@ -168,7 +168,7 @@ jobs:
         run: |
           for BUNDLE in dist/Temper.vst3 dist/Temper.component dist/Temper.clap; do
             echo "=== Signing $BUNDLE ==="
-            # Sign every Mach-O binary inside-out (no entitlements — plugins
+            # Sign every Mach-O binary inside-out (no entitlements â€” plugins
             # inherit host capabilities; empty hardened-runtime is all we need).
             # `file` on a universal binary prints a line PER ARCHITECTURE, so we
             # use find's path for signing and `file` only to filter (never to
@@ -221,7 +221,7 @@ jobs:
           mkdir -p scripts
           printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/VST3/Temper.vst3"\nrm -rf "/Library/Audio/Plug-Ins/Components/Temper.component"\nrm -rf "/Library/Audio/Plug-Ins/CLAP/Temper.clap"\nexit 0\n' > scripts/preinstall
           chmod +x scripts/preinstall
-          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version 0.1.2 --install-location / Temper-0.1.2-mac.pkg
+          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version 0.2.0 --install-location / Temper-0.2.0-mac.pkg
 
       - name: Sign installer package (productsign)
         if: ${{ env.MACOS_CERTIFICATE != '' && env.MACOS_INSTALLER_CERTIFICATE != '' }}
@@ -230,11 +230,11 @@ jobs:
             echo "::error::No Developer ID Installer identity available for productsign"
             exit 1
           fi
-          mv Temper-0.1.2-mac.pkg Temper-0.1.2-mac-unsigned.pkg
+          mv Temper-0.2.0-mac.pkg Temper-0.2.0-mac-unsigned.pkg
           productsign --sign "$INSTALLER_IDENTITY" --keychain "$KEYCHAIN_PATH" \
-            Temper-0.1.2-mac-unsigned.pkg Temper-0.1.2-mac.pkg
-          rm -f Temper-0.1.2-mac-unsigned.pkg
-          pkgutil --check-signature Temper-0.1.2-mac.pkg
+            Temper-0.2.0-mac-unsigned.pkg Temper-0.2.0-mac.pkg
+          rm -f Temper-0.2.0-mac-unsigned.pkg
+          pkgutil --check-signature Temper-0.2.0-mac.pkg
 
       - name: Notarize and staple installer package
         if: ${{ env.MACOS_CERTIFICATE != '' && env.MACOS_INSTALLER_CERTIFICATE != '' && env.APPLE_ID != '' }}
@@ -243,11 +243,11 @@ jobs:
           APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          xcrun notarytool submit Temper-0.1.2-mac.pkg \
+          xcrun notarytool submit Temper-0.2.0-mac.pkg \
             --apple-id "$APPLE_ID" --password "$APPLE_ID_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" \
             --wait --timeout 30m 2>&1 | tee notarize_pkg.txt
-          xcrun stapler staple  Temper-0.1.2-mac.pkg
-          xcrun stapler validate Temper-0.1.2-mac.pkg
+          xcrun stapler staple  Temper-0.2.0-mac.pkg
+          xcrun stapler validate Temper-0.2.0-mac.pkg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -255,7 +255,7 @@ jobs:
           name: Temper-macOS
           path: |
             dist/**
-            Temper-0.1.2-mac.pkg
+            Temper-0.2.0-mac.pkg
 
       - name: Cleanup keychain
         if: always()

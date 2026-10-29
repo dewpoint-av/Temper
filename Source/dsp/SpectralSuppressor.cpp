@@ -92,6 +92,11 @@ namespace temper
         return (band >= 0 && band < kNumBands) ? bands[0][static_cast<size_t> (band)].gainDb : 0.0f;
     }
 
+    float SpectralSuppressor::getBandFrequency (int band) const
+    {
+        return (band >= 0 && band < kNumBands) ? bands[0][static_cast<size_t> (band)].freq : 0.0f;
+    }
+
     void SpectralSuppressor::process (const float* inL, const float* inR,
                                       float* outL, float* outR, int numSamples)
     {

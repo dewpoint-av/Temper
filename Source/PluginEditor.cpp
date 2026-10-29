@@ -12,6 +12,36 @@ namespace
     juce::String gainText (float v) { return juce::String(v, 2) + "x"; }
     juce::String msText   (float v) { return juce::String(v, 0) + " ms"; }
 
+    // Magnitude response (dB) of an RBJ peaking filter at `freq` Hz — the same
+    // biquad the DSP uses for its manual EQ nodes (Q = 1.0), evaluated directly
+    // so the displayed curve matches the audio exactly.
+    float peakingDb (float freq, float center, float q, float gainDb, float fs)
+    {
+        const float A     = std::pow (10.0f, gainDb / 40.0f);
+        const float w0    = 2.0f * 3.14159265358979323846f * center / fs;
+        const float alpha = std::sin (w0) / (2.0f * q);
+        const float cw    = std::cos (w0);
+        const float a0    = 1.0f + alpha / A;
+        const float b0    = (1.0f + alpha * A) / a0;
+        const float b1    = -2.0f * cw / a0;
+        const float b2    = (1.0f - alpha * A) / a0;
+        const float a1    = -2.0f * cw / a0;
+        const float a2    = (1.0f - alpha / A) / a0;
+
+        const float w  = 2.0f * 3.14159265358979323846f * freq / fs;
+        const float c1 = std::cos (w),        s1 = std::sin (w);
+        const float c2 = std::cos (2.0f * w), s2 = std::sin (2.0f * w);
+
+        const float numRe = b0 + b1 * c1 + b2 * c2;
+        const float numIm = -(b1 * s1 + b2 * s2);
+        const float denRe = 1.0f + a1 * c1 + a2 * c2;
+        const float denIm = -(a1 * s1 + a2 * s2);
+
+        const float mag = std::sqrt (numRe * numRe + numIm * numIm)
+                        / std::sqrt (denRe * denRe + denIm * denIm);
+        return 20.0f * std::log10 (juce::jmax (mag, 1.0e-6f));
+    }
+
     // ---- a labelled rotary knob bound to a parameter ------------------------
     class Knob : public juce::Component,
                  private juce::AudioProcessorValueTreeState::Listener,
@@ -135,6 +165,22 @@ namespace
             g.drawText(" 0",  juce::roundToInt(r.getX()), juce::roundToInt(zeroY - 6), 30, 12, juce::Justification::right, false);
             g.drawText("-18", juce::roundToInt(r.getX()), juce::roundToInt(plot.getBottom() - 5), 30, 12, juce::Justification::right, false);
 
+            // Legend (top-right of the plot).
+            {
+                g.setFont(juce::FontOptions(9.0f, juce::Font::bold));
+                const int ly = juce::roundToInt(plot.getY() + 4.0f);
+                const int lw = 110;
+                const int lx = juce::roundToInt(plot.getRight() - static_cast<float>(lw) - 4.0f);
+
+                g.setColour(juce::Colour(0xffff5a5a));
+                g.drawLine(static_cast<float>(lx), ly + 5.0f, static_cast<float>(lx) + 10.0f, ly + 5.0f, 2.0f);
+                g.drawText("SUPPRESS", lx + 14, ly - 2, lw - 14, 12, juce::Justification::left, false);
+
+                g.setColour(TemperLookAndFeel::accent2);
+                g.drawLine(static_cast<float>(lx), ly + 17.0f, static_cast<float>(lx) + 10.0f, ly + 17.0f, 2.0f);
+                g.drawText("EQ", lx + 14, ly + 10, lw - 14, 12, juce::Justification::left, false);
+            }
+
             // Spectrum.
             juce::Path spec;
             for (int i = 0; i < kNumBins; ++i)
@@ -151,6 +197,49 @@ namespace
             g.fillPath(spec);
             g.setColour(TemperLookAndFeel::accent.withAlpha(0.65f));
             g.strokePath(spec, juce::PathStrokeType(1.2f));
+
+            // --- dynamic suppression overlay (what's being cut, and by how much)
+            {
+                juce::Path suppress;
+                bool started = false;
+                for (int i = 0; i < temper::kNumBands; ++i)
+                {
+                    const float freq = engine.getBandFrequency(i);
+                    const float red  = engine.getReductionDb(i);   // negative = cutting
+                    const float x = freqToX(freq, plot);
+                    const float y = gainToY(red, plot);
+                    if (!started) { suppress.startNewSubPath(x, y); started = true; }
+                    else          suppress.lineTo(x, y);
+                }
+
+                // Close the region down to the 0 dB line so the fill reads as
+                // "energy being removed below zero".
+                juce::Path fill = suppress;
+                const float xFirst = freqToX(engine.getBandFrequency(0), plot);
+                const float xLast  = freqToX(engine.getBandFrequency(temper::kNumBands - 1), plot);
+                fill.lineTo(xLast,  zeroY);
+                fill.lineTo(xFirst, zeroY);
+                fill.closeSubPath();
+
+                g.setColour(juce::Colour(0xffff5a5a).withAlpha(0.28f));
+                g.fillPath(fill);
+                g.setColour(juce::Colour(0xffff5a5a).withAlpha(0.95f));
+                g.strokePath(suppress, juce::PathStrokeType(1.4f));
+            }
+
+            // --- combined manual-EQ response curve -------------------------
+            {
+                juce::Path eqCurve;
+                for (int i = 0; i < kNumBins; ++i)
+                {
+                    const float freq = 40.0f * std::pow(500.0f, static_cast<float>(i) / (kNumBins - 1));
+                    const float x = freqToX(freq, plot);
+                    const float y = gainToY(eqResponseDb(freq), plot);
+                    if (i == 0) eqCurve.startNewSubPath(x, y); else eqCurve.lineTo(x, y);
+                }
+                g.setColour(TemperLookAndFeel::accent2.withAlpha(0.95f));
+                g.strokePath(eqCurve, juce::PathStrokeType(1.6f));
+            }
 
             // EQ nodes.
             for (int i = 0; i < temper::kNumEqBands; ++i)
@@ -234,6 +323,21 @@ namespace
             return t * 36.0f - 18.0f;
         }
 
+        // Combined magnitude response (dB) of all active manual EQ nodes.
+        float eqResponseDb(float freq) const
+        {
+            const float fs = static_cast<float>(engine.getSampleRate());
+            float db = 0.0f;
+            for (int i = 0; i < temper::kNumEqBands; ++i)
+            {
+                const float gain = getEqGain(i);
+                if (std::fabs(gain) < 0.01f)
+                    continue;
+                db += peakingDb(freq, getEqFreq(i), 1.0f, gain, fs);
+            }
+            return db;
+        }
+
         juce::String nodeFreqId(int i) const { return "eq" + juce::String(i + 1) + "freq"; }
         juce::String nodeGainId(int i) const { return "eq" + juce::String(i + 1) + "gain"; }
 
@@ -311,48 +415,6 @@ namespace
         static constexpr int kFftSize = 1 << kOrder;   // 1024
         static constexpr int kNumBins = 96;
     };
-
-    // ---- per-band dynamic reduction meter ----------------------------------
-    class ReductionMeter : public juce::Component,
-                           private juce::Timer
-    {
-    public:
-        explicit ReductionMeter(temper::SpectralSuppressor& e) : engine(e)
-        {
-            startTimerHz(20);
-        }
-
-        ~ReductionMeter() override { stopTimer(); }
-
-        void timerCallback() override { repaint(); }
-
-        void paint(juce::Graphics& g) override
-        {
-            auto r = getLocalBounds().toFloat().reduced(8.0f);
-            g.setColour(TemperLookAndFeel::track);
-            g.fillRoundedRectangle(r, 6.0f);
-            g.setColour(TemperLookAndFeel::border);
-            g.drawRoundedRectangle(r.reduced(0.5f), 6.0f, 1.5f);
-
-            const int N = temper::kNumBands;
-            const float bw = r.getWidth() / static_cast<float>(N);
-            for (int i = 0; i < N; ++i)
-            {
-                const float red  = -engine.getReductionDb(i);
-                const float norm = juce::jlimit(0.0f, 1.0f, red / 24.0f);
-                const float barH = norm * r.getHeight();
-                const float x = r.getX() + static_cast<float>(i) * bw;
-                if (barH > 0.5f)
-                {
-                    g.setColour(TemperLookAndFeel::accent.withAlpha(0.30f + 0.65f * norm));
-                    g.fillRect(juce::Rectangle<float>(x + 1.0f, r.getBottom() - barH, bw - 2.0f, barH));
-                }
-            }
-        }
-
-    private:
-        temper::SpectralSuppressor& engine;
-    };
 }
 
 // ===========================================================================
@@ -372,7 +434,6 @@ public:
         root.addAndMakeVisible(footer);
         root.addAndMakeVisible(*eqPanel);
         root.addAndMakeVisible(*curve);
-        root.addAndMakeVisible(*meter);
         root.addAndMakeVisible(*controlsPanel);
         for (auto& k : knobs)
             controlsPanel->addAndMakeVisible(*k);
@@ -389,12 +450,11 @@ public:
         title->setBounds(header.removeFromTop(44));
         subtitle.setBounds(header.removeFromTop(22));
 
-        // EQ panel (spectrum + curve) then the reduction meter.
+        // EQ panel (spectrum + suppression + EQ curve).
         eqPanel->setBounds(b.removeFromTop(330));
         auto eqb = eqPanel->getLocalBounds().reduced(10);
         eqb.removeFromTop(26);
-        curve->setBounds(eqb.removeFromTop(eqb.getHeight() - 30));
-        meter->setBounds(eqb);
+        curve->setBounds(eqb);
 
         // Controls panel with 8 knobs.
         controlsPanel->setBounds(b);
@@ -421,7 +481,6 @@ private:
 
     std::unique_ptr<Panel> eqPanel;
     std::unique_ptr<EqCurveEditor> curve;
-    std::unique_ptr<ReductionMeter> meter;
     std::unique_ptr<Panel> controlsPanel;
     std::vector<std::unique_ptr<Knob>> knobs;
 
@@ -446,7 +505,6 @@ private:
 
         eqPanel = std::make_unique<Panel>("SPECTRUM / EQ  -  click to add, drag to move, double-click to remove");
         curve = std::make_unique<EqCurveEditor>(processor.getEngine(), state);
-        meter = std::make_unique<ReductionMeter>(processor.getEngine());
         controlsPanel = std::make_unique<Panel>("DYNAMICS");
 
         knobs.push_back(std::make_unique<Knob>(state, "amount",      "AMOUNT",      pctText));
