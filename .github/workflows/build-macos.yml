@@ -221,7 +221,7 @@ jobs:
           mkdir -p scripts
           printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/VST3/Temper.vst3"\nrm -rf "/Library/Audio/Plug-Ins/Components/Temper.component"\nrm -rf "/Library/Audio/Plug-Ins/CLAP/Temper.clap"\nexit 0\n' > scripts/preinstall
           chmod +x scripts/preinstall
-          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version 0.2.0 --install-location / Temper-0.2.0-mac.pkg
+          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version 0.3.0 --install-location / Temper-0.3.0-mac.pkg
 
       - name: Sign installer package (productsign)
         if: ${{ env.MACOS_CERTIFICATE != '' && env.MACOS_INSTALLER_CERTIFICATE != '' }}
@@ -230,11 +230,11 @@ jobs:
             echo "::error::No Developer ID Installer identity available for productsign"
             exit 1
           fi
-          mv Temper-0.2.0-mac.pkg Temper-0.2.0-mac-unsigned.pkg
+          mv Temper-0.3.0-mac.pkg Temper-0.3.0-mac-unsigned.pkg
           productsign --sign "$INSTALLER_IDENTITY" --keychain "$KEYCHAIN_PATH" \
-            Temper-0.2.0-mac-unsigned.pkg Temper-0.2.0-mac.pkg
-          rm -f Temper-0.2.0-mac-unsigned.pkg
-          pkgutil --check-signature Temper-0.2.0-mac.pkg
+            Temper-0.3.0-mac-unsigned.pkg Temper-0.3.0-mac.pkg
+          rm -f Temper-0.3.0-mac-unsigned.pkg
+          pkgutil --check-signature Temper-0.3.0-mac.pkg
 
       - name: Notarize and staple installer package
         if: ${{ env.MACOS_CERTIFICATE != '' && env.MACOS_INSTALLER_CERTIFICATE != '' && env.APPLE_ID != '' }}
@@ -243,11 +243,11 @@ jobs:
           APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          xcrun notarytool submit Temper-0.2.0-mac.pkg \
+          xcrun notarytool submit Temper-0.3.0-mac.pkg \
             --apple-id "$APPLE_ID" --password "$APPLE_ID_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" \
             --wait --timeout 30m 2>&1 | tee notarize_pkg.txt
-          xcrun stapler staple  Temper-0.2.0-mac.pkg
-          xcrun stapler validate Temper-0.2.0-mac.pkg
+          xcrun stapler staple  Temper-0.3.0-mac.pkg
+          xcrun stapler validate Temper-0.3.0-mac.pkg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -255,7 +255,7 @@ jobs:
           name: Temper-macOS
           path: |
             dist/**
-            Temper-0.2.0-mac.pkg
+            Temper-0.3.0-mac.pkg
 
       - name: Cleanup keychain
         if: always()

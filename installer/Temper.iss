@@ -1,9 +1,9 @@
-; Temper — Inno Setup installer
+﻿; Temper â€” Inno Setup installer
 ; Packages the CLAP and the VST3 bundle to their standard system-wide
 ; locations. Run build.bat first so build\dist\ is populated.
 
 #define MyAppName "Temper"
-#define MyAppVersion "0.2.0"
+#define MyAppVersion "0.3.0"
 #define MyAppPublisher "Dewpoint AV"
 #define MyAppURL "https://dewpoint.live"
 
