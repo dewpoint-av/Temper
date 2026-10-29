@@ -289,7 +289,15 @@ namespace temper
 
     private:
         // ---- resonance suppressor ------------------------------------------
-        struct SuppBand { Biquad detect, cut; float freq = 0.0f, env = 0.0f, gainDb = 0.0f, appliedDb = 999.0f; };
+        struct SuppBand
+        {
+            Biquad detect, cut;
+            float freq = 0.0f, env = 0.0f, gainDb = 0.0f, appliedDb = 999.0f;
+            float thresholdLin = 0.01f;
+            float attCoef = 0.0f;
+            float relCoef = 0.0f;
+            float qCut = 2.0f;
+        };
         // ---- OTT -----------------------------------------------------------
         struct OttBand { EnvelopeFollower env; float gainDb = 0.0f; };
         // ---- gate ----------------------------------------------------------

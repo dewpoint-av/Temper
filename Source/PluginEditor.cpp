@@ -236,7 +236,7 @@ namespace
                 window[static_cast<size_t> (i)] = 0.5f * (1.0f - std::cos (2.0f * 3.14159265358979323846f * static_cast<float> (i) / static_cast<float> (kFftSize - 1)));
             fftBuf.assign (kFftSize * 2, 0.0f);
             spectrum.assign (kNumBins, 0.0f);
-            startTimerHz (30);
+            startTimerHz (15);
         }
 
         ~EqCurveEditor() override { stopTimer(); }
@@ -440,7 +440,6 @@ namespace
             g.setColour (col.withAlpha (0.95f));
             g.strokePath (curve, juce::PathStrokeType (1.4f));
         }
-
         float eqResponseDb (float freq) const
         {
             const float fs = static_cast<float> (engine.getSampleRate());
@@ -528,8 +527,8 @@ namespace
         std::unique_ptr<juce::dsp::FFT> fft;
         std::vector<float> window, fftBuf, spectrum;
         int dragged = -1;
-        static constexpr int kOrder   = 10;
-        static constexpr int kFftSize = 1 << kOrder;   // 1024
+        static constexpr int kOrder   = 9;
+        static constexpr int kFftSize = 1 << kOrder;   // 512
         static constexpr int kNumBins = 96;
     };
 }

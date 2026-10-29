@@ -88,9 +88,12 @@ namespace temper
                     sb.freq = bandFreq[m][static_cast<size_t> (b)];
                     const float sens = mp.suppSensitivity[static_cast<size_t> (b)];
                     const float qDetect = 0.8f + 1.2f * (1.0f - sens);
-                    const float qCut    = 1.0f + 5.0f * (1.0f - mp.suppQ[static_cast<size_t> (b)]);
+                    sb.qCut    = 1.0f + 5.0f * (1.0f - mp.suppQ[static_cast<size_t> (b)]);
+                    sb.thresholdLin = std::pow (10.0f, (-10.0f - sens * 40.0f) / 20.0f);
+                    sb.attCoef = 1.0f - std::exp (-1.0f / (std::max (0.1f, mp.suppAttackMs)  * 0.001f * fs));
+                    sb.relCoef = 1.0f - std::exp (-1.0f / (std::max (0.1f, mp.suppReleaseMs) * 0.001f * fs));
                     sb.detect.setBandpass (fs, sb.freq, qDetect);
-                    sb.cut.setPeaking (fs, sb.freq, qCut, sb.gainDb);
+                    sb.cut.setPeaking (fs, sb.freq, sb.qCut, sb.gainDb);
                     sb.appliedDb = sb.gainDb;
                 }
             }
@@ -188,30 +191,21 @@ namespace temper
             auto& sb = suppCh[ch].band[static_cast<size_t> (b)];
             const float detect = std::fabs (sb.detect.process (bands[b]));
             if (detect > sb.env) sb.env = detect;
-            else
-            {
-                const float rel = 1.0f - std::exp (-1.0f / (std::max (0.1f, mp.suppReleaseMs) * 0.001f * fs));
-                sb.env += rel * (detect - sb.env);
-            }
+            else                 sb.env += sb.relCoef * (detect - sb.env);
 
             float target = 0.0f;
-            const float sensitivity = mp.suppSensitivity[static_cast<size_t> (b)];
-            const float thresholdLin = std::pow (10.0f, (-10.0f - sensitivity * 40.0f) / 20.0f);
-            if (sb.env > thresholdLin)
+            if (sb.env > sb.thresholdLin)
             {
-                const float overDb = 20.0f * std::log10 (sb.env / thresholdLin);
+                const float overDb = 20.0f * std::log10 (sb.env / sb.thresholdLin);
                 target = std::clamp (-mp.suppAmount[static_cast<size_t> (b)] * overDb * suppSlopeFactor, -maxCutDb, 0.0f);
             }
 
-            const float att = 1.0f - std::exp (-1.0f / (std::max (0.1f, mp.suppAttackMs) * 0.001f * fs));
-            const float rel = 1.0f - std::exp (-1.0f / (std::max (0.1f, mp.suppReleaseMs) * 0.001f * fs));
-            const float coef = (target < sb.gainDb) ? att : rel;
+            const float coef = (target < sb.gainDb) ? sb.attCoef : sb.relCoef;
             sb.gainDb += coef * (target - sb.gainDb);
 
             if (std::fabs (sb.gainDb - sb.appliedDb) > 0.05f)
             {
-                const float qCut = 1.0f + 5.0f * (1.0f - mp.suppQ[static_cast<size_t> (b)]);
-                sb.cut.setPeaking (fs, sb.freq, qCut, sb.gainDb);
+                sb.cut.setPeaking (fs, sb.freq, sb.qCut, sb.gainDb);
                 sb.appliedDb = sb.gainDb;
             }
 

@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <cmath>
@@ -31,7 +31,7 @@ public:
     HoloTitle (const juce::String& titleText, float height, bool useBold = true)
         : text (titleText), fontHeight (height), bold (useBold)
     {
-        startTimerHz (15);
+        startTimerHz (10);
     }
 
     ~HoloTitle() override { stopTimer(); }
@@ -48,7 +48,6 @@ public:
 
     void paint (juce::Graphics& g) override
     {
-        const auto b = getLocalBounds().toFloat();
         if (glyphPath.isEmpty())
             rebuildPath();
         if (glyphPath.isEmpty())
@@ -72,8 +71,9 @@ public:
         g.setColour (a.withAlpha (glowAlpha));
         g.strokePath (glyphPath, juce::PathStrokeType (7.0f, juce::PathStrokeType::beveled, juce::PathStrokeType::butt));
 
-        // Iridescent gradient fill.
-        g.setGradientFill (juce::ColourGradient (a, b.getX(), b.getY(), c, b.getRight(), b.getBottom(), false));
+        // Flat iridescent fill (a gradient fill of the glyph path is expensive
+        // to re-rasterise every frame on Direct2D; the palette colour still shimmers).
+        g.setColour (c);
         g.fillPath (glyphPath);
     }
 
