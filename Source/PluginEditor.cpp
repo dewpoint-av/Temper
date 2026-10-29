@@ -708,7 +708,13 @@ private:
                 [this, m] { selectedModule = m; rebuildModuleControls(); relayout(); }));
         }
 
-        // Band selector (local UI state).
+        // Band selector (local UI state). Items are fixed 1..5, so populate
+        // once here — never clear() it inside rebuildModuleControls(), since
+        // clear() sends an async change notification that re-triggers the
+        // onChange handler and would cause an infinite UI rebuild loop.
+        for (int i = 1; i <= temper::kMaxBands; ++i)
+            bandCombo.addItem (juce::String (i), i);
+        bandCombo.setSelectedId (1, juce::dontSendNotification);
         bandCombo.onChange = [this] { selectedBand = bandCombo.getSelectedId(); rebuildModuleControls(); relayout(); };
     }
 
@@ -738,6 +744,9 @@ private:
         bandsLabel.setColour (juce::Label::textColourId, TemperLookAndFeel::muted);
         bandsLabel.setJustificationType (juce::Justification::centred);
 
+        // Destroy the old attachment before its combo (the attachment holds a
+        // reference to the combo).
+        bandsAttachment.reset();
         bandsCombo = std::make_unique<juce::ComboBox> ("Bands");
         for (int i = 1; i <= temper::kMaxBands; ++i)
             bandsCombo->addItem (juce::String (i), i);
@@ -748,9 +757,8 @@ private:
         bandLabel.setColour (juce::Label::textColourId, TemperLookAndFeel::muted);
         bandLabel.setJustificationType (juce::Justification::centred);
 
-        bandCombo.clear();
-        for (int i = 1; i <= temper::kMaxBands; ++i)
-            bandCombo.addItem (juce::String (i), i);
+        // Keep the band selector's selection in sync only — do not clear() it
+        // (see build()).
         bandCombo.setSelectedId (juce::jlimit (1, temper::kMaxBands, selectedBand), juce::dontSendNotification);
 
         // Crossovers (shared for the module).
