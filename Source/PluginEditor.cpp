@@ -553,7 +553,7 @@ public:
         root.addAndMakeVisible (orderCombo);
         root.addAndMakeVisible (*autoGainToggle);
         root.addAndMakeVisible (*eqPanel);
-        root.addAndMakeVisible (*curve);
+        eqPanel->addAndMakeVisible (*curve);
         root.addAndMakeVisible (*modulePanel);
         for (auto& t : moduleTabs) modulePanel->addAndMakeVisible (*t);
         attachModuleControls();
