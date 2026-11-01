@@ -236,6 +236,7 @@ namespace
                 window[static_cast<size_t> (i)] = 0.5f * (1.0f - std::cos (2.0f * 3.14159265358979323846f * static_cast<float> (i) / static_cast<float> (kFftSize - 1)));
             fftBuf.assign (kFftSize * 2, 0.0f);
             spectrum.assign (kNumBins, 0.0f);
+            setOpaque (true);   // repaints fully at 15 Hz — paint own bg, skip parent recomposite
             startTimerHz (15);
         }
 
@@ -245,6 +246,11 @@ namespace
 
         void paint (juce::Graphics& g) override
         {
+            {
+                auto wbg = getLookAndFeel().findColour (juce::ResizableWindow::backgroundColourId);
+                g.fillAll (wbg.isTransparent() ? juce::Colour (0xff0a0c10) : wbg);
+            }
+
             auto r = getLocalBounds().toFloat().reduced (10.0f);
             auto plot = r.withLeft (r.getX() + 38.0f);
 
