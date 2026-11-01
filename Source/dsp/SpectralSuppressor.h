@@ -279,6 +279,9 @@ namespace temper
         // ---- visualization -------------------------------------------------
         // Recent mono input for the spectrum display.
         const std::vector<float>& vizInput() const { return vizInputBuf; }
+        // Final output per channel (after makeup, mix and output level).
+        const std::vector<float>& vizOutputL() const { return vizOutL; }
+        const std::vector<float>& vizOutputR() const { return vizOutR; }
         int  vizWritePos() const                    { return vizWrite.load(); }
         double getSampleRate() const                { return sampleRate; }
 
@@ -333,6 +336,8 @@ namespace temper
 
         static constexpr int kVizSize = 4096;
         std::vector<float> vizInputBuf;
+        std::vector<float> vizOutL = std::vector<float> (kVizSize, 0.0f);   // sized up front: the UI
+        std::vector<float> vizOutR = std::vector<float> (kVizSize, 0.0f);   // may read before prepare
         std::atomic<int> vizWrite { 0 };
     };
 

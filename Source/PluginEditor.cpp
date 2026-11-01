@@ -2,6 +2,7 @@
 #include "PluginEditor.h"
 
 #include "HoloLogo.h"
+#include "OutputSpectrum.h"
 
 #include <cmath>
 #include <functional>
@@ -242,7 +243,12 @@ namespace
 
         ~EqCurveEditor() override { stopTimer(); }
 
-        void timerCallback() override { updateSpectrum(); repaint(); }
+        void timerCallback() override
+        {
+            updateSpectrum();
+            outputSpectrum.update (engine.vizOutputL(), engine.vizOutputR(), engine.vizWritePos(), engine.getSampleRate());
+            repaint();
+        }
 
         void paint (juce::Graphics& g) override
         {
@@ -259,6 +265,8 @@ namespace
             g.setColour (TemperLookAndFeel::border);
             g.drawRoundedRectangle (r.reduced (0.5f), 8.0f, 1.5f);
 
+            drawOutputAnalyzer (g, plot);
+
             const float zeroY = gainToY (0.0f, plot);
             g.setColour (TemperLookAndFeel::muted.withAlpha (0.45f));
             g.drawLine (plot.getX(), zeroY, plot.getRight(), zeroY, 1.0f);
@@ -273,7 +281,7 @@ namespace
             juce::Path spec;
             for (int i = 0; i < kNumBins; ++i)
             {
-                const float freq = 40.0f * std::pow (500.0f, static_cast<float> (i) / (kNumBins - 1));
+                const float freq = 20.0f * std::pow (1000.0f, static_cast<float> (i) / (kNumBins - 1));
                 const float x = freqToX (freq, plot);
                 const float y = plot.getBottom() - spectrum[static_cast<size_t> (i)] * plot.getHeight();
                 if (i == 0) spec.startNewSubPath (x, y); else spec.lineTo (x, y);
@@ -308,7 +316,7 @@ namespace
                 {
                     for (int i = 0; i < kNumBins; ++i)
                     {
-                        const float freq = 40.0f * std::pow (500.0f, static_cast<float> (i) / (kNumBins - 1));
+                        const float freq = 20.0f * std::pow (1000.0f, static_cast<float> (i) / (kNumBins - 1));
                         const float x = freqToX (freq, plot);
                         const float y = gainToY (eqResponseDb (freq), plot);
                         if (i == 0) eqCurve.startNewSubPath (x, y); else eqCurve.lineTo (x, y);
@@ -351,6 +359,9 @@ namespace
                 g.setColour (TemperLookAndFeel::accent2);
                 g.drawLine (static_cast<float> (lx), ly + 3 * 13 + 5.0f, static_cast<float> (lx) + 10.0f, ly + 3 * 13 + 5.0f, 2.0f);
                 g.drawText ("EQ", lx + 14, ly + 3 * 13 - 2, 46, 12, juce::Justification::left, false);
+                g.setColour (TemperLookAndFeel::text.withAlpha (0.6f));
+                g.drawLine (static_cast<float> (lx), ly + 4 * 13 + 5.0f, static_cast<float> (lx) + 10.0f, ly + 4 * 13 + 5.0f, 2.0f);
+                g.drawText ("OUTPUT", lx + 14, ly + 4 * 13 - 2, 46, 12, juce::Justification::left, false);
             }
         }
 
@@ -392,14 +403,14 @@ namespace
 
         float freqToX (float freq, juce::Rectangle<float> plot) const
         {
-            const float lo = std::log (40.0f), hi = std::log (20000.0f);
-            const float t = (std::log (juce::jlimit (40.0f, 20000.0f, freq)) - lo) / (hi - lo);
+            const float lo = std::log (20.0f), hi = std::log (20000.0f);
+            const float t = (std::log (juce::jlimit (20.0f, 20000.0f, freq)) - lo) / (hi - lo);
             return plot.getX() + t * plot.getWidth();
         }
 
         float xToFreq (float x, juce::Rectangle<float> plot) const
         {
-            const float lo = std::log (40.0f), hi = std::log (20000.0f);
+            const float lo = std::log (20.0f), hi = std::log (20000.0f);
             const float t = juce::jlimit (0.0f, 1.0f, (x - plot.getX()) / plot.getWidth());
             return std::exp (lo + t * (hi - lo));
         }
@@ -414,6 +425,57 @@ namespace
         {
             const float t = juce::jlimit (0.0f, 1.0f, (plot.getBottom() - y) / plot.getHeight());
             return t * 36.0f - 18.0f;
+        }
+
+        // Full-range output spectrum with its own dB scale (0 to -90 dBFS, labelled on the
+        // right) and frequency grid. Drawn first so everything else sits on top of it.
+        void drawOutputAnalyzer (juce::Graphics& g, juce::Rectangle<float> plot)
+        {
+            const auto dbToY = [&plot] (float db)
+            {
+                return plot.getBottom() - (db - OutputSpectrum::kFloorDb) / -OutputSpectrum::kFloorDb * plot.getHeight();
+            };
+
+            g.setFont (juce::FontOptions (9.0f, juce::Font::bold));
+
+            for (float f : { 50.0f, 100.0f, 200.0f, 500.0f, 1000.0f, 2000.0f, 5000.0f, 10000.0f })
+            {
+                const float x = freqToX (f, plot);
+                g.setColour (TemperLookAndFeel::muted.withAlpha (0.14f));
+                g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
+                g.setColour (TemperLookAndFeel::muted.withAlpha (0.7f));
+                g.drawText (f >= 1000.0f ? juce::String (f / 1000.0f, 0) + "k" : juce::String (f, 0),
+                            juce::roundToInt (x) - 16, juce::roundToInt (plot.getBottom()) - 13, 32, 12,
+                            juce::Justification::centred, false);
+            }
+
+            for (float db : { 0.0f, -30.0f, -60.0f })
+            {
+                const float y = dbToY (db);
+                g.setColour (TemperLookAndFeel::muted.withAlpha (0.14f));
+                g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
+                g.setColour (TemperLookAndFeel::muted.withAlpha (0.7f));
+                g.drawText (juce::String (db, 0) + " dB", juce::roundToInt (plot.getRight()) - 44,
+                            juce::roundToInt (y) + 1, 42, 12, juce::Justification::right, false);
+            }
+
+            juce::Path line;
+            for (int i = 0; i < OutputSpectrum::kPoints; ++i)
+            {
+                const float x = freqToX (OutputSpectrum::freqAt (i), plot);
+                const float y = dbToY (outputSpectrum.dbAt (i));
+                if (i == 0) line.startNewSubPath (x, y); else line.lineTo (x, y);
+            }
+
+            juce::Path fill (line);
+            fill.lineTo (plot.getRight(), plot.getBottom());
+            fill.lineTo (plot.getX(), plot.getBottom());
+            fill.closeSubPath();
+
+            g.setColour (TemperLookAndFeel::text.withAlpha (0.10f));
+            g.fillPath (fill);
+            g.setColour (TemperLookAndFeel::text.withAlpha (0.38f));
+            g.strokePath (line, juce::PathStrokeType (1.0f));
         }
 
         // Per-band gain curve for one module, connected across band centres.
@@ -519,8 +581,8 @@ namespace
             const float norm = 1.0f / (kFftSize * 0.25f);
             for (int b = 0; b < kNumBins; ++b)
             {
-                const float freq = 40.0f * std::pow (500.0f, static_cast<float> (b) / (kNumBins - 1));
-                const int bin = static_cast<int> (std::round (freq * kFftSize / 48000.0f));
+                const float freq = 20.0f * std::pow (1000.0f, static_cast<float> (b) / (kNumBins - 1));
+                const int bin = static_cast<int> (std::round (freq * kFftSize / static_cast<float> (engine.getSampleRate())));
                 if (bin < 1 || bin * 2 + 1 >= kFftSize) { spectrum[static_cast<size_t> (b)] = 0.0f; continue; }
                 const float re = fftBuf[static_cast<size_t> (bin * 2)];
                 const float im = fftBuf[static_cast<size_t> (bin * 2 + 1)];
@@ -532,6 +594,7 @@ namespace
         juce::AudioProcessorValueTreeState& state;
         std::unique_ptr<juce::dsp::FFT> fft;
         std::vector<float> window, fftBuf, spectrum;
+        OutputSpectrum outputSpectrum;
         int dragged = -1;
         static constexpr int kOrder   = 9;
         static constexpr int kFftSize = 1 << kOrder;   // 512
@@ -711,7 +774,14 @@ private:
         {
             moduleTabs.push_back (std::make_unique<ModuleTab> (tabNames[m],
                 [this, m] { return selectedModule == m; },
-                [this, m] { selectedModule = m; rebuildModuleControls(); relayout(); }));
+                [this, m]
+                {
+                    selectedModule = m;
+                    rebuildModuleControls();
+                    relayout();
+                    // Tabs read the selection in paint(), so each must be told to redraw.
+                    for (auto& t : moduleTabs) t->repaint();
+                }));
         }
 
         // Band selector (local UI state). Items are fixed 1..5, so populate

@@ -331,6 +331,9 @@ namespace temper
                 const float out = std::clamp ((dry * (1.0f - mix) + wet[ch] * makeup * mix) * output, -1.0f, 1.0f);
                 if (ch == 0) outL[s] = out; else outR[s] = out;
             }
+
+            vizOutL[static_cast<size_t> (w)] = outL[s];
+            vizOutR[static_cast<size_t> (w)] = outR[s];
         }
     }
 

@@ -26,6 +26,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Read version
+        run: echo "PKG_VERSION=$(sed -n 's/^project([A-Za-z0-9_]* VERSION \([0-9.]*\)).*/\1/p' CMakeLists.txt)" >> "$GITHUB_ENV"
+
       - name: Configure CMake
         run: |
           cmake -S . -B build \
@@ -202,6 +205,13 @@ jobs:
           xcrun notarytool submit "$ZIP" \
             --apple-id "$APPLE_ID" --password "$APPLE_ID_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" \
             --wait --timeout 30m 2>&1 | tee notarize_bundles.txt
+          if ! grep -q "status: Accepted" notarize_bundles.txt; then
+            echo "::error::Apple did not accept the submission. Its log follows."
+            ID=$(sed -n 's/^ *id: //p' notarize_bundles.txt | head -1)
+            [ -n "$ID" ] && xcrun notarytool log "$ID" \
+              --apple-id "$APPLE_ID" --password "$APPLE_ID_APP_PASSWORD" --team-id "$APPLE_TEAM_ID"
+            exit 1
+          fi
 
           xcrun stapler staple  dist/Temper.vst3
           xcrun stapler staple  dist/Temper.component
@@ -221,7 +231,7 @@ jobs:
           mkdir -p scripts
           printf '#!/bin/sh\nrm -rf "/Library/Audio/Plug-Ins/VST3/Temper.vst3"\nrm -rf "/Library/Audio/Plug-Ins/Components/Temper.component"\nrm -rf "/Library/Audio/Plug-Ins/CLAP/Temper.clap"\nexit 0\n' > scripts/preinstall
           chmod +x scripts/preinstall
-          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version 0.3.0 --install-location / Temper-0.3.0-mac.pkg
+          pkgbuild --root payload --scripts scripts --identifier com.dewpoint.Temper --version "${{ env.PKG_VERSION }}" --install-location / Temper-${{ env.PKG_VERSION }}-mac.pkg
 
       - name: Sign installer package (productsign)
         if: ${{ env.MACOS_CERTIFICATE != '' && env.MACOS_INSTALLER_CERTIFICATE != '' }}
@@ -230,11 +240,11 @@ jobs:
             echo "::error::No Developer ID Installer identity available for productsign"
             exit 1
           fi
-          mv Temper-0.3.0-mac.pkg Temper-0.3.0-mac-unsigned.pkg
+          mv Temper-${{ env.PKG_VERSION }}-mac.pkg Temper-${{ env.PKG_VERSION }}-mac-unsigned.pkg
           productsign --sign "$INSTALLER_IDENTITY" --keychain "$KEYCHAIN_PATH" \
-            Temper-0.3.0-mac-unsigned.pkg Temper-0.3.0-mac.pkg
-          rm -f Temper-0.3.0-mac-unsigned.pkg
-          pkgutil --check-signature Temper-0.3.0-mac.pkg
+            Temper-${{ env.PKG_VERSION }}-mac-unsigned.pkg Temper-${{ env.PKG_VERSION }}-mac.pkg
+          rm -f Temper-${{ env.PKG_VERSION }}-mac-unsigned.pkg
+          pkgutil --check-signature Temper-${{ env.PKG_VERSION }}-mac.pkg
 
       - name: Notarize and staple installer package
         if: ${{ env.MACOS_CERTIFICATE != '' && env.MACOS_INSTALLER_CERTIFICATE != '' && env.APPLE_ID != '' }}
@@ -243,11 +253,18 @@ jobs:
           APPLE_ID_APP_PASSWORD: ${{ secrets.APPLE_ID_APP_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          xcrun notarytool submit Temper-0.3.0-mac.pkg \
+          xcrun notarytool submit Temper-${{ env.PKG_VERSION }}-mac.pkg \
             --apple-id "$APPLE_ID" --password "$APPLE_ID_APP_PASSWORD" --team-id "$APPLE_TEAM_ID" \
             --wait --timeout 30m 2>&1 | tee notarize_pkg.txt
-          xcrun stapler staple  Temper-0.3.0-mac.pkg
-          xcrun stapler validate Temper-0.3.0-mac.pkg
+          if ! grep -q "status: Accepted" notarize_pkg.txt; then
+            echo "::error::Apple did not accept the submission. Its log follows."
+            ID=$(sed -n 's/^ *id: //p' notarize_pkg.txt | head -1)
+            [ -n "$ID" ] && xcrun notarytool log "$ID" \
+              --apple-id "$APPLE_ID" --password "$APPLE_ID_APP_PASSWORD" --team-id "$APPLE_TEAM_ID"
+            exit 1
+          fi
+          xcrun stapler staple  Temper-${{ env.PKG_VERSION }}-mac.pkg
+          xcrun stapler validate Temper-${{ env.PKG_VERSION }}-mac.pkg
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
@@ -255,7 +272,20 @@ jobs:
           name: Temper-macOS
           path: |
             dist/**
-            Temper-0.3.0-mac.pkg
+            Temper-${{ env.PKG_VERSION }}-mac.pkg
+
+      # A signed but un-notarized installer is flagged by macOS, and the notarize steps
+      # above skip silently when their secrets are missing, so check the real result.
+      # This runs after the upload, so the artifact is still there to inspect.
+      - name: Verify Gatekeeper accepts the installer
+        if: ${{ github.event_name != 'pull_request' }}
+        run: |
+          PKG="Temper-${{ env.PKG_VERSION }}-mac.pkg"
+          pkgutil --check-signature "$PKG" || true
+          if ! spctl --assess -vv --type install "$PKG"; then
+            echo "::error::macOS will flag $PKG as suspicious. Check that the MACOS_INSTALLER_CERTIFICATE, APPLE_ID, APPLE_ID_APP_PASSWORD and APPLE_TEAM_ID secrets are all set."
+            exit 1
+          fi
 
       - name: Cleanup keychain
         if: always()
