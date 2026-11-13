@@ -5,7 +5,8 @@
 
 #include "dsp/SpectralSuppressor.h"
 
-class TemperAudioProcessor : public juce::AudioProcessor
+class TemperAudioProcessor : public juce::AudioProcessor,
+                             private juce::AsyncUpdater
 {
 public:
     TemperAudioProcessor();
@@ -41,8 +42,24 @@ public:
 
     temper::SpectralSuppressor& getEngine() { return engine; }
 
+    // Custom threshold: learn from what's playing.
+    void startLearn() { engine.dynamics().startLearn(); }
+    void stopLearn()  { engine.dynamics().stopLearn(); }
+    bool isLearning() const { return engine.dynamics().isLearning(); }
+    void clearCustomCurve() { engine.dynamics().clearCustomCurve(); }
+    // Gate noise profile (spectral gate).
+    void startNoiseLearn() { engine.gateEngine().startLearn(); }
+    void stopNoiseLearn()  { engine.gateEngine().stopLearn(); }
+    bool isNoiseLearning() const { return engine.gateEngine().isLearning(); }
+    void clearNoiseProfile() { engine.gateEngine().clearProfile(); }
+    bool hasSidechain() const;
+
 private:
+    void handleAsyncUpdate() override;            // reports a changed latency (Quality)
+    temper::Params readParams() const;
+
     temper::SpectralSuppressor engine;
+    std::atomic<int> pendingLatency { -1 };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(TemperAudioProcessor)
 };

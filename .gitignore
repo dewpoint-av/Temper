@@ -1,5 +1,6 @@
 # Temper build & packaging outputs (never commit artifacts)
 /build/
+/build_ui/
 /dist/
 /installer/output/
 build_release.log

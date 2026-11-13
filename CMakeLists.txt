@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.21)
-project(Temper VERSION 0.3.1)
+project(Temper VERSION 0.4.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,6 +16,11 @@ add_subdirectory(clap-juce-extensions)
 set(TEMPER_PLUGIN_FORMATS VST3)
 if(APPLE)
     list(APPEND TEMPER_PLUGIN_FORMATS AU)
+endif()
+# Developer option: a standalone app, for checking the UI without a host.
+option(TEMPER_STANDALONE "Also build a standalone app" OFF)
+if(TEMPER_STANDALONE)
+    list(APPEND TEMPER_PLUGIN_FORMATS Standalone)
 endif()
 
 juce_add_plugin(Temper
@@ -53,6 +58,9 @@ target_sources(Temper
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/dsp/SpectralSuppressor.cpp
+        Source/dsp/SpectralDynamics.cpp
+        Source/dsp/OttEngine.cpp
+        Source/dsp/GateEngine.cpp
 )
 
 target_include_directories(Temper
