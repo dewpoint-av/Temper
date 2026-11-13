@@ -1,4 +1,5 @@
 #include "GateEngine.h"
+#include "FastMath.h"
 
 #include <algorithm>
 #include <cmath>
@@ -39,6 +40,9 @@ namespace temper
         gSpec.assign (B, 0.0f); gTmp.assign (B, 0.0f); holdF.assign (B, 0.0f); openBin.assign (B, 0);
         for (auto& m : mask) m.assign (B, 0.0f);
         learnSum.assign (B, 0.0);
+        autoS.assign (B, 0.0f); autoSubMin.assign (B, 0.0f); autoBin.assign (B, -200.0f);
+        for (auto& h : autoHist) h.assign (B, 0.0f);
+        autoSubLen = std::max (1, static_cast<int> (1.5 * sr / (specN / 8) / kAutoSub));   // 1.5 s over the sub-windows
         prepared = true;
         const GateSettings s = st;
         st.x1 = -1.0f;   // force a full update
@@ -58,6 +62,8 @@ namespace temper
         std::fill (gSpec.begin(), gSpec.end(), 0.0f);
         std::fill (openBin.begin(), openBin.end(), static_cast<unsigned char> (0));
         std::fill (holdF.begin(), holdF.end(), 0.0f);
+        std::fill (level.begin(), level.end(), -200.0f);
+        autoInit = false; autoFrames = 0; autoHistPos = 0; autoHistCount = 0;
     }
 
     void GateEngine::setSettings (const GateSettings& s)
@@ -76,7 +82,15 @@ namespace temper
         makeNodeCoefs (lp, sr, c); for (auto& ch : scFilt) ch[1].set (st.scLpf < 19900.0f ? c[0] : BiquadCoefs());
         attC = 1.0f - std::exp (-1.0f / (std::max (0.02f, st.attMs) * 0.001f * static_cast<float> (sr)));
         relC = 1.0f - std::exp (-1.0f / (std::max (1.0f, st.relMs) * 0.001f * static_cast<float> (sr)));
-        envDecay = std::exp (-1.0f / static_cast<float> (0.005 * sr));
+        // Peak-hold decay per band, from the band's lowest content: a sub tone must read as a
+        // steady level (a 5 ms decay would swing 40 dB within one 40 Hz cycle and chatter).
+        {
+            const int nb = std::clamp (st.bands, 1, kDynBands);
+            float tau[kDynBands] = { 0.01f, 0.005f, 0.005f };   // one band: the whole range, quick
+            if (nb >= 2) { tau[0] = 0.04f; tau[1] = std::clamp (2.0f / std::max (st.x1, 20.0f), 0.005f, 0.02f); }
+            if (nb == 3) tau[2] = std::clamp (2.0f / std::max (st.x2, 300.0f), 0.002f, 0.005f);
+            for (int b = 0; b < kDynBands; ++b) envDecay[static_cast<size_t> (b)] = std::exp (-1.0f / (tau[b] * static_cast<float> (sr)));
+        }
         holdSamples = static_cast<int> (st.holdMs * 0.001 * sr);
         lookSamples = std::clamp (static_cast<int> (std::lround (st.lookMs * 0.001 * sr)), 0, static_cast<int> (0.01 * sr));
         if (masksChanged) rebuildMasks();
@@ -149,7 +163,7 @@ namespace temper
         {
             const auto& bp = st.band[static_cast<size_t> (b)];
             float& e = env[static_cast<size_t> (b)];
-            e = std::max (std::max (std::fabs (det[0][b]), std::fabs (det[1][b])), e * envDecay);   // linked
+            e = std::max (std::max (std::fabs (det[0][b]), std::fabs (det[1][b])), e * envDecay[static_cast<size_t> (b)]);   // linked
             const float lv = 20.0f * std::log10 (e + 1.0e-12f);
             bool& o = open[static_cast<size_t> (b)];
             int& h = hold[static_cast<size_t> (b)];
@@ -178,6 +192,7 @@ namespace temper
 
     void GateEngine::getProfile (float* dB) const { for (int i = 0; i < kCurvePoints; ++i) dB[i] = profile[static_cast<size_t> (i)]; }
     void GateEngine::setProfile (const float* dB) { for (int i = 0; i < kCurvePoints; ++i) pendingProfile[static_cast<size_t> (i)] = dB[i]; pendingSet.store (true); }
+    void GateEngine::getAutoProfile (float* dB) const { for (int i = 0; i < kCurvePoints; ++i) dB[i] = autoViz[static_cast<size_t> (i)].load (std::memory_order_relaxed); }
 
     void GateEngine::spectralFrame (const StereoStft& s, std::array<std::vector<float>, 2>& gain)
     {
@@ -229,7 +244,42 @@ namespace temper
             ++learnFrames;
         }
 
-        const bool prof = st.useProfile && profileValid.load();
+        // Auto noise reference: per bin, the power smoothed over ~30 ms, its minimum over the
+        // current sub-window, and the least of the last 8 sub-windows (1.5 s). The minimum of a
+        // noisy quantity sits under its mean; the bias (measured on white noise) is put back.
+        const bool autoRef = st.profileMode == 2;
+        if (autoRef)
+        {
+            constexpr float kAutoBiasDb = 7.0f;   // measured: the tracked minimum of pink noise sits 7 dB under its mean
+            const bool newSub = (++autoFrames >= autoSubLen);
+            for (int k = 0; k <= H; ++k)
+            {
+                const float p = 0.5f * (P0[static_cast<size_t> (k)] + P1[static_cast<size_t> (k)]);
+                float& sm = autoS[static_cast<size_t> (k)];
+                sm = autoInit ? sm + 0.2f * (p - sm) : p;
+                float& sub = autoSubMin[static_cast<size_t> (k)];
+                sub = autoInit && autoFrames > 1 ? std::min (sub, sm) : sm;
+                float m = sub;
+                for (int i = 0; i < autoHistCount; ++i) m = std::min (m, autoHist[static_cast<size_t> (i)][static_cast<size_t> (k)]);
+                autoBin[static_cast<size_t> (k)] = powerToDb (m) + kAutoBiasDb;
+            }
+            if (newSub)
+            {
+                autoHist[static_cast<size_t> (autoHistPos)] = autoSubMin;
+                autoHistPos = (autoHistPos + 1) % kAutoSub;
+                autoHistCount = std::min (autoHistCount + 1, kAutoSub);
+                autoFrames = 0;
+            }
+            autoInit = true;
+            for (int p = 0; p < kCurvePoints; ++p)
+            {
+                const int k = std::clamp (static_cast<int> (std::lround (curvePointFreq (p) * specN / sr)), 0, H);
+                autoViz[static_cast<size_t> (p)].store (autoBin[static_cast<size_t> (k)], std::memory_order_relaxed);
+            }
+        }
+
+        const bool prof = (st.profileMode == 1 && profileValid.load()) || autoRef;
+        const float* refBin = autoRef ? autoBin.data() : profileBin.data();
         const float fa = 1.0f - std::exp (-hopSec / std::max (0.0005f, st.attMs * 0.001f));
         const float fr = 1.0f - std::exp (-hopSec / std::max (0.001f, st.relMs * 0.001f));
         const float holdFrames = st.holdMs * 0.001f / hopSec;
@@ -253,9 +303,9 @@ namespace temper
             }
             // Fixed: the bin's level as its band would read if all of it looked like this bin.
             // With a profile: the bin's own level against the noise there.
-            const float now = prof ? 10.0f * std::log10 (p + 1e-24f) : 10.0f * std::log10 (p * bandScale / 3.0f + 1e-24f);
+            const float now = prof ? powerToDb (p) : powerToDb (p * bandScale * s.rmsFactor());
             lv = (lv < -150.0f) ? now : 0.5f * (lv + now);
-            thr = gb.thrDb + (prof ? profileBin[static_cast<size_t> (k)] : 0.0f);
+            thr = gb.thrDb + (prof ? refBin[k] : 0.0f);
             gb.thrDb = thr;
             unsigned char& o = openBin[static_cast<size_t> (k)];
             float& h = holdF[static_cast<size_t> (k)];

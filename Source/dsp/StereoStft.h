@@ -36,16 +36,29 @@ namespace temper
             n = 0;
         }
 
-        void configure (int size)
+        // Window 0: Hann (mainlobe +-2 bins, sidelobes from -31 dB). Window 1: 4-term
+        // Blackman-Harris (+-4 bins, sidelobes under -92 dB): for a long transform on the lows,
+        // where a tone's negative-frequency image would otherwise leak into the bins above DC
+        // and beat against it, which a per-bin gain then follows. Both overlap-add exactly at 8x.
+        void configure (int size, int windowType = 0)
         {
             n = std::min (size, maxN);
             hop = n / 8; half = n / 2;
             fft.init (n);
+            double sumW = 0.0, sumW2 = 0.0;
             for (int i = 0; i < n; ++i)
-                window[static_cast<size_t> (i)] = 0.5f - 0.5f * std::cos (2.0f * 3.14159265358979323846f * static_cast<float> (i) / static_cast<float> (n));
+            {
+                const double a = 2.0 * 3.14159265358979323846 * i / n;
+                const double w = windowType == 1 ? 0.35875 - 0.48829 * std::cos (a) + 0.14128 * std::cos (2.0 * a) - 0.01168 * std::cos (3.0 * a)
+                                                 : 0.5 - 0.5 * std::cos (a);
+                window[static_cast<size_t> (i)] = static_cast<float> (w);
+                sumW += w; sumW2 += w * w;
+            }
             double s = 0.0;
             for (int m = 0; m < 8; ++m) { const double w = window[static_cast<size_t> ((hop / 2 + m * hop) % n)]; s += w * w; }
             olaScale = static_cast<float> (1.0 / (n * s));
+            norm2 = static_cast<float> ((2.0 / sumW) * (2.0 / sumW));                 // a full-scale sine reads 1 in its bin
+            rmsFac = static_cast<float> ((sumW * sumW) / (2.0 * n * sumW2));          // sum of a sine's bin powers x this = its mean square
             reset();
         }
 
@@ -62,6 +75,7 @@ namespace temper
         int size() const { return n; }
         int bins() const { return half + 1; }
         int hopSize() const { return hop; }
+        float rmsFactor() const { return rmsFac; }   // 1/3 for Hann
 
         // One stereo sample; useSc: also analyse the sidechain. onFrame (const StereoStft&, gains)
         // runs on each hop and fills gain[c][k].
@@ -78,7 +92,6 @@ namespace temper
             if (++hopCount < hop) return;
             hopCount = 0;
 
-            const float norm2 = (4.0f / static_cast<float> (n)) * (4.0f / static_cast<float> (n));
             if (useSc)
             {
                 analyse (sc, mask);
@@ -135,7 +148,7 @@ namespace temper
         }
 
         int n = 0, maxN = 0, hop = 0, half = 0, wpos = 0, rpos = 0, hopCount = 0;
-        float olaScale = 1.0f;
+        float olaScale = 1.0f, norm2 = 1.0f, rmsFac = 1.0f / 3.0f;
         Fft fft;
         std::vector<float> re, im, window;
         std::array<std::vector<float>, 2> in, sc, out, xr, xi;

@@ -787,11 +787,13 @@ private:
             if (bands != static_cast<int> (bandPills.size())) { rebuildModuleControls(); relayout(); }
             juce::String s2;
             const bool spectral = state.getRawParameterValue ("gateEngine")->load() > 0.5f;
-            if (processor.isNoiseLearning())                          s2 = "Learning noise... play only the noise, then press STOP";
-            else if (! spectral)                                      s2 = "Band gate: per band threshold / range / ratio";
-            else if (! processor.getEngine().gateEngine().hasProfile()) s2 = "Spectral: no noise profile yet - LEARN NOISE on a noise-only part";
-            else if (state.getRawParameterValue ("gateProfile")->load() > 0.5f) s2 = "Thresholds = dB above the learned noise, bin by bin";
-            else                                                      s2 = "Profile learned: turn NOISE PROFILE on to use it";
+            const int ref = juce::roundToInt (state.getRawParameterValue ("gateNoiseRef")->load());
+            if (processor.isNoiseLearning())  s2 = "Learning noise... play only the noise, then press STOP";
+            else if (! spectral)              s2 = "Band gate: per band threshold / range / ratio";
+            else if (ref == 2)                s2 = "Auto: thresholds = dB above the noise floor each bin keeps returning to (last 1.5 s)";
+            else if (ref == 1 && ! processor.getEngine().gateEngine().hasProfile()) s2 = "Learned: no noise profile yet - LEARN NOISE on a noise-only part";
+            else if (ref == 1)                s2 = "Thresholds = dB above the learned noise, bin by bin";
+            else                              s2 = "Spectral gate: thresholds are levels (NOISE REF Learned / Auto for noise removal)";
             if (s2 != statusLabel.getText()) statusLabel.setText (s2, juce::dontSendNotification);
             return;
         }
@@ -990,7 +992,7 @@ private:
             combos.push_back (std::make_unique<ChoiceBox> (state, "gateBands",  "BANDS"));
             toggles.push_back (std::make_unique<ToggleButton> ("FLIP (DUCK)", "gateFlip", state));
             toggles.push_back (std::make_unique<ToggleButton> ("SIDECHAIN", "gateSc", state));
-            toggles.push_back (std::make_unique<ToggleButton> ("NOISE PROFILE", "gateProfile", state));
+            combos.push_back (std::make_unique<ChoiceBox> (state, "gateNoiseRef", "NOISE REF"));
             actionPills.push_back (std::make_unique<Pill> ([this] { return processor.isNoiseLearning() ? juce::String ("STOP LEARNING") : juce::String ("LEARN NOISE"); },
                 [this] { return processor.isNoiseLearning(); },
                 [this] { if (processor.isNoiseLearning()) processor.stopNoiseLearn(); else processor.startNoiseLearn(); }));

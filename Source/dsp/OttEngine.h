@@ -4,18 +4,23 @@
   Temper — the OTT module: three-band upward + downward compression with MO-TT-style
   controls, on either of two engines.
 
-    Multiband - time domain, sample-accurate: Linkwitz-Riley crossovers (flat sum), RMS or
-                peak detection, optional lookahead. The punchy one.
-    Spectral  - an FFT (1024 at 48 kHz, 2.7 ms hops) where the bands are linear-phase masks.
-                Resolution sets what each bin's gain follows: 0 = its band's level (a
-                linear-phase multiband compressor), 1 = its own neighbourhood (a true spectral
-                compressor: peaks pulled down, dips lifted, the spectrum densified).
+    Multiband - time domain, sample-accurate: Linkwitz-Riley crossovers (flat sum), per-band
+                two-pole RMS (or peak) detectors timed to the band (a sub tone reads as a steady
+                level, not a ripple, so pushing the low band hard stays clean), optional
+                lookahead with gain ramping. The punchy one.
+    Spectral  - two FFT resolutions: 4096 (at 48 kHz) below ~250 Hz for the sub and low band,
+                1024 (2.7 ms hops) above for the mids and highs, crossed over with linear-phase
+                masks; the bands are linear-phase masks too. Resolution sets what each bin's
+                gain follows: 0 = its band's level (a linear-phase multiband compressor), 1 = its
+                own neighbourhood (a true spectral compressor: peaks pulled down, dips lifted).
+                The gain curve's slope across bins is limited so the equivalent filter stays
+                short (no time-aliasing grit). Latency = 4096.
 
   Per band: Above threshold + Downward amount (1 = inf:1, more = past inf:1), Below threshold
   + Upward amount, input and output gain, Amount, attack / release, solo, bypass. Globally:
   Amount (scales every band's ratios and gains), Time (scales attack / release), input and
   output gain, low / high tone, knee, detection, timing style, stereo link (0..200 %),
-  clipper, sidechain (by band or wideband). JUCE-free.
+  an anti-aliased output clipper, sidechain (by band or wideband). JUCE-free.
 */
 
 #include "Bands.h"
@@ -87,9 +92,30 @@ namespace temper
         float bandGainDb (int b) const    { return gainViz[static_cast<size_t> (b)].load (std::memory_order_relaxed); }
 
     private:
+       #ifndef TEMPER_OTT_RES_SPLIT
+        #define TEMPER_OTT_RES_SPLIT 250.0f
+       #endif
+        static constexpr float kResSplitHz = TEMPER_OTT_RES_SPLIT;   // spectral: long FFT below, short above (the define: tests)
+
+        struct SpecRes
+        {
+            StereoStft stft;
+            int n = 0;
+            std::vector<float> binFreq, share;                       // share: this resolution's weight per bin
+            std::array<std::vector<float>, kDynBands> mask;
+            std::array<float, kDynBands> maskBins {};
+            std::vector<int> halfW;
+            std::array<std::vector<float>, 2> level, g1, g2, gOut;   // per bin: detector dB, smoothed GR stages, final dynamic gain dB
+            std::vector<double> prefix;
+            float slopeDbPerBin = 6.0f;
+            int kLo = 1;                                             // first bin at or above 20 Hz
+            int kHi = 0;                                             // last bin with any share (the long one stops ~500 Hz)
+        };
+
         float computeGain (const OttBand& b, float levelDb, float amt) const;
         void processMultiband (float& l, float& r, float scl, float scr);
-        void spectralFrame (const StereoStft& s, std::array<std::vector<float>, 2>& gain);
+        void spectralFrame (SpecRes& R, const StereoStft& s, std::array<std::vector<float>, 2>& gain);
+        void spectralViz();
         void updateViz();
 
         double sr = 48000.0;
@@ -98,24 +124,19 @@ namespace temper
 
         // Multiband.
         std::array<Lr4Split, 2> split, scSplit;
+        std::array<std::array<LevelDetector, kDynBands>, 2> det;
         std::array<std::array<DelayLine, kDynBands>, 2> look;
-        std::array<std::array<float, kDynBands>, 2> ms {}, gDb {}, gDb2 {};
-        float rmsCoef = 0.0f;
+        std::array<std::array<RunningMean, kDynBands>, 2> lookSmooth;
+        std::array<std::array<float, kDynBands>, 2> gDb {}, gDb2 {};
         int lookSamples = 0;
         std::array<float, kDynBands> attC {}, relC {};
         DelayLine offDelayL, offDelayR;
+        std::array<AdaaClipper, 2> clipper;
 
         // Spectral.
-        StereoStft stft;
-        int specN = 0;
-        std::vector<float> binFreq;
-        std::array<std::vector<float>, 2> levelBuf;   // per-bin detector level (dB)
+        std::array<SpecRes, 2> res;                  // 0 long, 1 short
+        std::array<DelayLine, 2> shortIn, shortSc;   // the short path waits for the long one
         int vizCount = 0;
-        std::array<std::vector<float>, kDynBands> mask;
-        std::array<float, kDynBands> maskBins {};
-        std::array<std::vector<float>, 2> specG, specG2;
-        std::vector<double> prefix;
-        std::vector<int> halfW;
 
         std::array<std::atomic<float>, kCurvePoints> viz {};
         std::array<std::atomic<float>, kDynBands> levelViz {}, gainViz {};

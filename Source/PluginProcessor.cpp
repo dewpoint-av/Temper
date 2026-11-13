@@ -122,7 +122,7 @@ namespace
             layout.add (std::make_unique<APF> (k + "ScHpf", "Gate Sidechain High-Pass", juce::NormalisableRange<float> (20.0f, 2000.0f, 0.0f, 0.3f), 20.0f));
             layout.add (std::make_unique<APF> (k + "ScLpf", "Gate Sidechain Low-Pass", juce::NormalisableRange<float> (500.0f, 20000.0f, 0.0f, 0.3f), 20000.0f));
             layout.add (std::make_unique<APF> (k + "Smooth", "Gate Spectral Smoothing", 0.0f, 1.0f, 0.5f));
-            layout.add (std::make_unique<APB> (k + "Profile", "Gate Use Noise Profile", false));
+            layout.add (std::make_unique<APC> (k + "NoiseRef", "Gate Noise Reference", juce::StringArray { "Off", "Learned", "Auto" }, 0));
             for (int b = 1; b <= 3; ++b)
             {
                 const juce::String s2 = juce::String (b), n = "Gate Band " + s2 + " ";
@@ -232,7 +232,7 @@ temper::Params TemperAudioProcessor::readParams() const
         g.attMs = param ("gateAtt"); g.holdMs = param ("gateHold"); g.relMs = param ("gateRel");
         g.hystDb = param ("gateHyst"); g.lookMs = param ("gateLook"); g.flip = on ("gateFlip");
         g.sidechain = on ("gateSc") && hasSidechain(); g.scHpf = param ("gateScHpf"); g.scLpf = param ("gateScLpf");
-        g.smoothing = param ("gateSmooth"); g.useProfile = on ("gateProfile");
+        g.smoothing = param ("gateSmooth"); g.profileMode = idx ("gateNoiseRef");
         for (int b = 0; b < temper::kDynBands; ++b)
         {
             const juce::String s = juce::String (b + 1);

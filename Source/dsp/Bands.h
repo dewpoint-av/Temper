@@ -99,4 +99,93 @@ namespace temper
         std::vector<float> buf;
         int pos = 0;
     };
+
+    // Two spectral resolutions share the work: a long FFT below fc, a short one above, crossed
+    // over with a raised cosine two octaves wide (wide enough that both grids sample it finely
+    // and their sum stays flat). lowShare + highShare = 1 at every frequency.
+    inline float lowResShare (float f, float fc)
+    {
+        const float t = std::clamp (0.5f * std::log2 (std::max (f, 1.0f) / fc) + 0.5f, 0.0f, 1.0f);
+        return 0.5f + 0.5f * std::cos (3.14159265f * t);
+    }
+
+    // Level detector for a compressor band: a two-pole RMS (or a smoothed peak) whose time
+    // constant suits the band's lowest frequency, so a sub tone reads as a steady level
+    // instead of a ripple at twice its frequency (ripple becomes harmonic distortion through
+    // the gain). Returns the level in dB (a full-scale sine reads 0 dB in RMS).
+    class LevelDetector
+    {
+    public:
+        void set (double fs, float tauSec, bool peakMode)
+        {
+            peak = peakMode;
+            c = 1.0f - std::exp (-1.0f / (std::max (tauSec, 0.0001f) * static_cast<float> (fs)));
+            // Peak: the hold decays over the same time, the two smoothing poles are 4x quicker.
+            decay = std::exp (-1.0f / (std::max (tauSec, 0.0001f) * static_cast<float> (fs)));
+            cp = 1.0f - std::exp (-4.0f / (std::max (tauSec, 0.0001f) * static_cast<float> (fs)));
+        }
+        void reset() { s1 = s2 = pk = 0.0f; }
+        float processDb (float x)
+        {
+            if (peak)
+            {
+                pk = std::max (std::fabs (x), pk * decay);
+                s1 += cp * (pk - s1);
+                s2 += cp * (s1 - s2);
+                return 10.0f * std::log10 (s2 * s2 * 0.5f + 1.0e-20f);   // peak -> the RMS a sine of that peak would have
+            }
+            s1 += c * (x * x - s1);
+            s2 += c * (s1 - s2);
+            return 10.0f * std::log10 (s2 + 1.0e-20f);
+        }
+        float lastPower() const { return peak ? s2 * s2 * 0.5f : s2; }
+    private:
+        bool peak = false;
+        float c = 0.0f, cp = 0.0f, decay = 0.0f, s1 = 0.0f, s2 = 0.0f, pk = 0.0f;
+    };
+
+    // A hard clipper with first-order antiderivative anti-aliasing (Parker et al. 2016) applied
+    // to the clipping residual only, so the linear region is untouched (no half-sample
+    // low-pass) while the clipped part's aliasing drops by about 17 dB. The anti-aliased result
+    // overshoots the ceiling a little where the clip starts (as a band-limited clip must); a
+    // final clamp holds the ceiling at the cost of a few dB of that gain.
+    class AdaaClipper
+    {
+    public:
+        void reset() { x1 = 0.0f; }
+        float process (float x, float c)
+        {
+            const auto R = [c] (float v) { const float e = std::fabs (v) - c; return e > 0.0f ? -0.5f * e * e : 0.0f; };   // antiderivative of clip(v) - v
+            const float d = x - x1;
+            float r;
+            if (std::fabs (d) > 1.0e-5f) r = (R (x) - R (x1)) / d;
+            else { const float m = 0.5f * (x + x1); r = std::clamp (m, -c, c) - m; }
+            x1 = x;
+            return std::clamp (x + r, -c, c);
+        }
+    private:
+        float x1 = 0.0f;
+    };
+
+    // A running mean over the last `len` samples (lookahead gain smoothing).
+    class RunningMean
+    {
+    public:
+        void prepare (int maxLen) { buf.assign (static_cast<size_t> (std::max (maxLen, 1)), 0.0f); pos = 0; sum = 0.0; cur = 0; }
+        void reset() { std::fill (buf.begin(), buf.end(), 0.0f); pos = 0; sum = 0.0; }
+        float process (float x, int len)
+        {
+            len = std::clamp (len, 1, static_cast<int> (buf.size()));
+            if (len != cur) { cur = len; sum = 0.0; std::fill (buf.begin(), buf.end(), x); sum = static_cast<double> (x) * len; }
+            if (len == 1) return x;
+            sum += x - buf[static_cast<size_t> (pos)];
+            buf[static_cast<size_t> (pos)] = x;
+            pos = (pos + 1) % len;
+            return static_cast<float> (sum / len);
+        }
+    private:
+        std::vector<float> buf;
+        int pos = 0, cur = 0;
+        double sum = 0.0;
+    };
 } // namespace temper
